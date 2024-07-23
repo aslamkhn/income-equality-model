@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comprehensive Income Equality Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        #salaryInputs {
+            margin-bottom: 30px;
+        }
+        .salary-band {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .salary-band label {
+            width: 200px;
+            flex-shrink: 0;
+        }
+        .salary-band input[type="number"] {
+            width: 60px;
+            padding: 5px;
+            margin-right: 10px;
+        }
+        .salary-band input[type="range"] {
+            width: 200px;
+        }
+        .chart-container {
+            height: 400px;
+            margin-bottom: 30px;
+        }
+        .tab {
+            overflow: hidden;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+            margin-bottom: 20px;
+        }
+        .tab button {
+            background-color: inherit;
+            float: left;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 14px 16px;
+            transition: 0.3s;
+            font-size: 16px;
+        }
+        .tab button:hover {
+            background-color: #ddd;
+        }
+        .tab button.active {
+            background-color: #ccc;
+        }
+        .tabcontent {
+            display: none;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-top: none;
+        }
+        .explanation {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f8f8;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        #giniCoefficient {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Comprehensive Income Equality Dashboard</h1>
+    
+    <h2>Salary Distribution Input</h2>
+    <div id="salaryInputs"></div>
+    
+    <div class="tab">
+        <button class="tablinks" onclick="openTab(event, 'SalaryDistribution')" id="defaultOpen">Salary Distribution</button>
+        <button class="tablinks" onclick="openTab(event, 'IncomeDistribution')">Income Distribution</button>
+        <button class="tablinks" onclick="openTab(event, 'GiniCoefficient')">Gini Coefficient</button>
+    </div>
+
+    <div id="SalaryDistribution" class="tabcontent">
+        <h3>Salary Distribution</h3>
+        <div class="chart-container">
+            <canvas id="salaryChart"></canvas>
+        </div>
+        <div class="explanation">
+            <p>The salary distribution chart shows the number of employees in each salary band, providing a clear visual representation of how salaries are spread across the organization.</p>
+        </div>
+    </div>
+
+    <div id="IncomeDistribution" class="tabcontent">
+        <h3>Income Distribution</h3>
+        <div class="chart-container">
+            <canvas id="incomeDistributionChart"></canvas>
+        </div>
+        <div class="explanation">
+            <p>The cumulative income distribution chart displays the percentage of employees earning up to each salary level, illustrating how income is distributed across the workforce.</p>
+        </div>
+    </div>
+
+    <div id="GiniCoefficient" class="tabcontent">
+        <h3>Gini Coefficient Analysis</h3>
+        <div id="giniCoefficient"></div>
+        <div class="chart-container">
+            <canvas id="lorenzCurveChart"></canvas>
+        </div>
+        <div class="explanation">
+            <p>The Gini coefficient measures income inequality, ranging from 0 (perfect equality) to 1 (perfect inequality). The Lorenz curve visually represents the deviation from perfect income equality.</p>
+        </div>
+    </div>
+
+    <script>
+        const salaryBands = [
+            { min: 20000, max: 40000, employees: 30 },
+            { min: 40001, max: 60000, employees: 35 },
+            { min: 60001, max: 80000, employees: 25 },
+            { min: 80001, max: 100000, employees: 15 },
+            { min: 100001, max: 150000, employees: 10 },
+            { min: 150001, max: 200000, employees: 5 }
+        ];
+
+        let salaryChart, incomeDistributionChart, lorenzCurveChart;
+
+        function createInputs() {
+            const container = document.getElementById('salaryInputs');
+            salaryBands.forEach((band, index) => {
+                const div = document.createElement('div');
+                div.className = 'salary-band';
+                div.innerHTML = `
+                    <label>$${band.min.toLocaleString()} - $${band.max.toLocaleString()}</label>
+                    <input type="number" id="band${index}" value="${band.employees}" min="1" max="100">
+                    <input type="range" id="slider${index}" value="${band.employees}" min="1" max="100">
+                `;
+                container.appendChild(div);
+
+                const numberInput = div.querySelector(`#band${index}`);
+                const sliderInput = div.querySelector(`#slider${index}`);
+
+                numberInput.addEventListener('input', () => {
+                    sliderInput.value = numberInput.value;
+                    updateCharts();
+                });
+
+                sliderInput.addEventListener('input', () => {
+                    numberInput.value = sliderInput.value;
+                    updateCharts();
+                });
+            });
+        }
+
+        function getEmployeeCounts() {
+            return salaryBands.map((_, index) => parseInt(document.getElementById(`band${index}`).value) || 0);
+        }
+
+        function updateCharts() {
+            const employeeCounts = getEmployeeCounts();
+            const totalEmployees = employeeCounts.reduce((sum, count) => sum + count, 0);
+
+            updateSalaryChart(employeeCounts);
+            updateIncomeDistributionChart(employeeCounts, totalEmployees);
+            updateGiniCoefficient(employeeCounts);
+        }
+
+        function updateSalaryChart(employeeCounts) {
+            const ctx = document.getElementById('salaryChart').getContext('2d');
+            if (salaryChart) {
+                salaryChart.data.datasets[0].data = employeeCounts;
+                salaryChart.update();
+            } else {
+                salaryChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: salaryBands.map(band => `$${band.min.toLocaleString()} - $${band.max.toLocaleString()}`),
+                        datasets: [{
+                            label: 'Number of Employees',
+                            data: employeeCounts,
+                            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: 'Number of Employees' }
+                            },
+                            x: {
+                                title: { display: true, text: 'Salary Bands' }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function updateIncomeDistributionChart(employeeCounts, totalEmployees) {
+            const ctx = document.getElementById('incomeDistributionChart').getContext('2d');
+            const cumulativePercentages = employeeCounts.reduce((acc, count, index) => {
+                const prevPercentage = acc[index - 1] || 0;
+                acc.push(prevPercentage + (count / totalEmployees * 100));
+                return acc;
+            }, []);
+
+            if (incomeDistributionChart) {
+                incomeDistributionChart.data.datasets[0].data = cumulativePercentages;
+                incomeDistributionChart.update();
+            } else {
+                incomeDistributionChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: salaryBands.map(band => `$${band.max.toLocaleString()}`),
+                        datasets: [{
+                            label: 'Cumulative % of Employees',
+                            data: cumulativePercentages,
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            tension: 0.1,
+                            fill: false
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: 'Cumulative % of Employees' },
+                                ticks: { callback: value => value + '%' }
+                            },
+                            x: {
+                                title: { display: true, text: 'Salary' }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function updateGiniCoefficient(employeeCounts) {
+            const totalEmployees = employeeCounts.reduce((sum, count) => sum + count, 0);
+            const totalSalary = salaryBands.reduce((sum, band, index) => 
+                sum + ((band.min + band.max) / 2) * employeeCounts[index], 0);
+            
+            const sortedSalaries = salaryBands.flatMap((band, index) => 
+                Array(employeeCounts[index]).fill((band.min + band.max) / 2)
+            ).sort((a, b) => a - b);
+
+            const lorenzPoints = sortedSalaries.reduce((acc, salary, i) => {
+                const x = (i + 1) / totalEmployees;
+                const y = acc.totalSalary + salary;
+                acc.points.push({ x, y: y / totalSalary });
+                acc.totalSalary = y;
+                return acc;
+            }, { points: [{ x: 0, y: 0 }], totalSalary: 0 }).points;
+
+            const giniCoefficient = calculateGiniCoefficient(lorenzPoints);
+            
+            document.getElementById('giniCoefficient').textContent = `Gini Coefficient: ${giniCoefficient.toFixed(4)}`;
+            
+            updateLorenzCurveChart(lorenzPoints);
+        }
+
+        function calculateGiniCoefficient(lorenzPoints) {
+            let area = 0;
+            for (let i = 1; i < lorenzPoints.length; i++) {
+                area += (lorenzPoints[i].x - lorenzPoints[i-1].x) * (lorenzPoints[i].y + lorenzPoints[i-1].y) / 2;
+            }
+            return 1 - 2 * area;
+        }
+
+        function updateLorenzCurveChart(lorenzPoints) {
+            const ctx = document.getElementById('lorenzCurveChart').getContext('2d');
+
+            if (lorenzCurveChart) {
+                lorenzCurveChart.data.datasets[0].data = lorenzPoints;
+                lorenzCurveChart.update();
+            } else {
+                lorenzCurveChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        datasets: [{
+                            label: 'Lorenz Curve',
+                            data: lorenzPoints,
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            fill: false
+                        }, {
+                            label: 'Line of Equality',
+                            data: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderDash: [5, 5],
+                            fill: false
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                type: 'linear',
+                                position: 'bottom',
+                                title: { display: true, text: 'Cumulative Share of Population' }
+                            },
+                            y: {
+                                title: { display: true, text: 'Cumulative Share of Income' }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function openTab(evt, tabName) {
+            var i, tabcontent, tablinks;
+            tabcontent = document.getElementsByClassName("tabcontent");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            tablinks = document.getElementsByClassName("tablinks");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            createInputs();
+            updateCharts();
+            document.getElementById("defaultOpen").click();
+        });
+    </script>
+</body>
+</html>
